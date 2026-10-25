@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Whisker Way</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="masthead">
+        <div class="brand">
+          <p class="eyebrow">A cozy cat platformer</p>
+          <h1>Whisker Way</h1>
+        </div>
+        <ul class="legend" aria-label="Controls">
+          <li><kbd>A</kbd><kbd>D</kbd><span>Move</span></li>
+          <li><kbd>W</kbd><span>Jump · tap twice to double jump</span></li>
+          <li><kbd>S</kbd><span>Crouch</span></li>
+          <li><kbd>Shift</kbd><span>Sprint</span></li>
+          <li><kbd>P</kbd><span>Pause</span></li>
+          <li><kbd>M</kbd><span>Sound</span></li>
+          <li class="legend-action"><button id="soundToggle" class="sound-toggle" type="button" aria-pressed="true">Sound on</button></li>
+        </ul>
+      </header>
+
+      <div class="stage">
+        <canvas id="gameCanvas" width="960" height="540" aria-label="Whisker Way cat platformer"></canvas>
+      </div>
+
+      <section class="wardrobe">
+        <div class="wardrobe-head">
+          <p class="eyebrow">Choose your companion</p>
+          <h2>Coat</h2>
+        </div>
+        <div class="skins" role="group" aria-label="Cat skins">
+          <button class="skin-button selected" data-skin="ginger" aria-pressed="true">
+            <canvas class="skin-portrait" data-skin="ginger"></canvas>
+            <span>Ginger tabby</span>
+          </button>
+          <button class="skin-button" data-skin="tuxedo" aria-pressed="false">
+            <canvas class="skin-portrait" data-skin="tuxedo"></canvas>
+            <span>Tuxedo</span>
+          </button>
+          <button class="skin-button" data-skin="siamese" aria-pressed="false">
+            <canvas class="skin-portrait" data-skin="siamese"></canvas>
+            <span>Siamese</span>
+          </button>
+          <button class="skin-button" data-skin="calico" aria-pressed="false">
+            <canvas class="skin-portrait" data-skin="calico"></canvas>
+            <span>Calico</span>
+          </button>
+          <button class="skin-button" data-skin="silver" aria-pressed="false">
+            <canvas class="skin-portrait" data-skin="silver"></canvas>
+            <span>Silver tabby</span>
+          </button>
+        </div>
+
+        <div class="wardrobe-head shop-head">
+          <div>
+            <p class="eyebrow">Spend your fish</p>
+            <h2>Accessories</h2>
+          </div>
+          <p class="bank" aria-live="polite"><span class="bank-icon" aria-hidden="true">🐟</span><span id="fishBank">0</span> fish</p>
+        </div>
+        <div class="shop" id="shop" role="group" aria-label="Accessories"></div>
+        <p class="tips">Fish you carry are banked when you reach the cottage, and lost if you fall in the river. Catnip stops your cat for a sniff, so jump over it. Crouch under low branches and through hollow logs. Crows and dogs bump you back. Double jump recharges in 3 seconds.</p>
+      </section>
+    </main>
+    <script src="audio.js"></script>
+    <script src="game.js"></script>
+  </body>
+</html>

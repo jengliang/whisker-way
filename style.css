@@ -1,0 +1,258 @@
+@import url("https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600&display=swap");
+
+:root {
+  color-scheme: dark;
+  --font: "Fredoka", "Nunito", "Varela Round", "Trebuchet MS", system-ui, sans-serif;
+  --text: #f3ecff;
+  --muted: rgba(243, 236, 255, 0.62);
+  --accent: #ffb36b;
+  --glass: rgba(255, 255, 255, 0.06);
+  --glass-border: rgba(255, 255, 255, 0.1);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: var(--font);
+  color: var(--text);
+  background:
+    radial-gradient(1200px 600px at 20% -10%, rgba(255, 179, 107, 0.16), transparent 60%),
+    radial-gradient(900px 600px at 100% 10%, rgba(140, 120, 255, 0.18), transparent 60%),
+    linear-gradient(180deg, #1c1a33 0%, #131126 100%);
+}
+
+.shell {
+  width: min(1120px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 28px 0 48px;
+}
+
+.masthead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+
+.eyebrow {
+  margin: 0 0 6px;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+h1, h2 { margin: 0; font-weight: 600; }
+
+h1 {
+  font-size: clamp(2rem, 4.4vw, 2.9rem);
+  line-height: 1;
+  background: linear-gradient(180deg, #fff7ec 0%, #ffd3a8 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+h2 { font-size: 1.35rem; }
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  background: var(--glass);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+kbd {
+  min-width: 24px;
+  padding: 2px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-bottom-width: 3px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.stage {
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 22px;
+  background: #0d0c1c;
+  box-shadow:
+    0 30px 80px rgba(0, 0, 0, 0.45),
+    0 0 0 6px rgba(255, 255, 255, 0.03);
+}
+
+canvas#gameCanvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+
+.wardrobe {
+  margin-top: 26px;
+  padding: 22px 24px 20px;
+  border: 1px solid var(--glass-border);
+  border-radius: 20px;
+  background: var(--glass);
+  backdrop-filter: blur(8px);
+}
+
+.wardrobe-head { margin-bottom: 14px; }
+
+.skins {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.skin-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+  color: var(--text);
+  font: 500 0.92rem var(--font);
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.skin-button:hover {
+  transform: translateY(-3px);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.skin-button.selected {
+  border-color: var(--accent);
+  background: linear-gradient(180deg, rgba(255, 179, 107, 0.18), rgba(255, 179, 107, 0.04));
+  box-shadow: 0 10px 30px rgba(255, 150, 80, 0.18);
+}
+
+.skin-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.skin-portrait {
+  width: 112px;
+  height: 80px;
+}
+
+.legend-action { padding: 0; border: 0; background: none; }
+
+.sound-toggle {
+  padding: 7px 14px;
+  border: 1px solid rgba(255, 179, 107, 0.45);
+  border-radius: 999px;
+  background: rgba(255, 179, 107, 0.14);
+  color: var(--text);
+  font: 600 0.85rem var(--font);
+  cursor: pointer;
+}
+
+.sound-toggle[aria-pressed="false"] {
+  border-color: var(--glass-border);
+  background: var(--glass);
+  color: var(--muted);
+}
+
+.shop-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.bank {
+  margin: 0;
+  padding: 6px 14px;
+  border: 1px solid rgba(255, 215, 130, 0.35);
+  border-radius: 999px;
+  background: rgba(255, 215, 130, 0.1);
+  color: #ffe1a1;
+  font-weight: 600;
+}
+
+.bank-icon { margin-right: 6px; }
+
+.shop {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.shop-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 8px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.02));
+  color: var(--text);
+  font: 500 0.92rem var(--font);
+  cursor: pointer;
+  transition: transform 160ms ease, border-color 160ms ease, opacity 160ms ease;
+}
+
+.shop-item:hover { transform: translateY(-3px); border-color: rgba(255, 255, 255, 0.22); }
+
+.shop-item.selected {
+  border-color: var(--accent);
+  background: linear-gradient(180deg, rgba(255, 179, 107, 0.18), rgba(255, 179, 107, 0.04));
+}
+
+.shop-item.locked { opacity: 0.5; }
+
+.shop-item:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.shop-portrait { width: 112px; height: 80px; }
+
+.shop-status { color: var(--muted); font-size: 0.8rem; }
+
+.shop-item.selected .shop-status { color: var(--accent); }
+
+.tips {
+  margin: 16px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+@media (max-width: 700px) {
+  .shell { width: calc(100% - 18px); padding-top: 18px; }
+  .stage { border-radius: 14px; }
+  .wardrobe { padding: 16px 14px; }
+  .skins { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+  .skin-portrait, .shop-portrait { width: 96px; height: 69px; }
+  .shop { grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+}
