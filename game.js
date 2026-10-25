@@ -24,6 +24,9 @@ const RIVER_Y = 498;
 const RIVER_FLOW = 0.6;
 const SAVE_KEY = "whisker-way-save-v1";
 const MAX_PIXEL_SCALE = 1.5;
+const MAX_RISE = 85;
+const JUMP_SAFETY = 0.85;
+const LOW_EDGE_CLEARANCE = 60;
 const SCENERY_TOP = 200;
 const FONT = '"Fredoka", "Nunito", "Varela Round", "Trebuchet MS", system-ui, sans-serif';
 
@@ -210,18 +213,19 @@ function generateLevel(levelNumber) {
   homeX = 3750 + levelNumber * 10;
 
   let cursor = 520;
-  let previousY = 420;
+  let previousY = platforms[0].y;
   for (;;) {
     const kind = pickPlatformKind(levelNumber, random);
     const moving = kind === "moving-x" || kind === "moving-y";
     const amplitude = kind === "moving-x" ? 40 + random() * 30 : 0;
-    const gap = 30 + random() * (30 + tier * 6) + amplitude;
+    const step = Math.min(MAX_RISE, 55 + tier * 6);
+    const y = clamp(previousY + (random() * 2 - 1) * step, 265, 420);
+    const reach = jumpReach(previousY - y) * JUMP_SAFETY;
+    const gap = Math.min(45 + random() * (40 + tier * 6), reach) + amplitude;
     const x = cursor + gap;
     const room = homeX - 180 - x - amplitude;
     if (room < 110) break;
     const width = Math.min(room, moving ? 100 + random() * 40 : Math.max(110, 130 + random() * 140 - tier * 4));
-    const rise = 55 + tier * 6;
-    const y = clamp(previousY + (random() * 2 - 1) * rise, 265, 420);
     const platform = makePlatform(x, y, width, 30);
     if (kind === "moving-x") {
       platform.motion = { axis: "x", amplitude, speed: 0.8 + random() * 0.5 + tier * 0.03, phase: random() * Math.PI * 2 };
@@ -250,6 +254,18 @@ function generateLevel(levelNumber) {
   drifters = buildDrifters(levelNumber);
 }
 
+function jumpReach(rise) {
+  const speed = BASE_SPEED * SPRINT_MULTIPLIER;
+  let vy = JUMP_POWER;
+  let height = 0;
+  for (let frame = 1; frame < 200; frame++) {
+    vy += GRAVITY;
+    height -= vy;
+    if (vy > 0 && height < rise) return speed * frame;
+  }
+  return 0;
+}
+
 function makePlatform(x, y, width, height) {
   return { x, y, width, height, baseX: x, baseY: y, prevY: y, dx: 0, dy: 0 };
 }
@@ -266,9 +282,9 @@ function pickPlatformKind(levelNumber, random) {
 function decoratePlatform(p, levelNumber, random) {
   const tier = Math.min(levelNumber, 10);
   const taken = [];
-  const claim = (width) => {
+  const claim = (width, edge = 12) => {
     for (let attempt = 0; attempt < 6; attempt++) {
-      const start = p.x + 12 + random() * Math.max(1, p.width - width - 24);
+      const start = p.x + edge + random() * Math.max(1, p.width - width - edge * 2);
       if (taken.every(([a, b]) => start + width < a - 30 || start > b + 30)) {
         taken.push([start, start + width]);
         return start;
@@ -285,10 +301,10 @@ function decoratePlatform(p, levelNumber, random) {
     });
   } else {
     const lowChance = levelNumber >= 2 ? Math.min(0.45, 0.2 + 0.03 * (levelNumber - 2)) : 0;
-    if (p.width >= 150 && random() < lowChance) {
+    if (p.width >= 110 + LOW_EDGE_CLEARANCE * 2 && random() < lowChance) {
       const isLog = random() > 0.5;
       const width = isLog ? 80 + random() * 30 : 70 + random() * 30;
-      const start = claim(width);
+      const start = claim(width, LOW_EDGE_CLEARANCE);
       if (start !== null) {
         const height = isLog ? 16 : 48;
         obstacles.push({ kind: isLog ? "hollow" : "bough", x: start, y: p.y - LOW_CLEARANCE - height, width, height, low: true, platformY: p.y });
