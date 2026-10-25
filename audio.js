@@ -172,6 +172,11 @@ const Sound = (() => {
     fanfare: () => {
       [0, 4, 7, 12].forEach((semi, i) => tone({ frequency: freq(semi + 12), type: "triangle", duration: 0.4, volume: 0.08, delay: i * 0.11 }));
     },
+    finale: () => {
+      [0, 4, 7, 12, 7, 12, 16, 19].forEach((semi, i) => tone({ frequency: freq(semi + 12), type: "triangle", duration: 0.32, volume: 0.07, delay: i * 0.14 }));
+      [0, 4, 7, 12].forEach((semi) => tone({ frequency: freq(semi), type: "sine", duration: 2.4, volume: 0.05, delay: 1.15, attack: 0.08 }));
+      [24, 28, 31].forEach((semi, i) => tone({ frequency: freq(semi), duration: 1.6, volume: 0.03, delay: 1.2 + i * 0.09 }));
+    },
     buy: () => {
       tone({ frequency: 1318, duration: 0.1, volume: 0.08 });
       tone({ frequency: 1760, duration: 0.3, volume: 0.08, delay: 0.08 });

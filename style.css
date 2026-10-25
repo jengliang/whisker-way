@@ -96,6 +96,7 @@ kbd {
 }
 
 .stage {
+  position: relative;
   overflow: hidden;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 22px;
@@ -110,6 +111,42 @@ canvas#gameCanvas {
   width: 100%;
   height: auto;
   aspect-ratio: 16 / 9;
+}
+
+.name-entry {
+  position: absolute;
+  left: 50%;
+  top: 64%;
+  display: flex;
+  gap: 10px;
+  width: min(420px, 70%);
+  transform: translate(-50%, -50%);
+}
+
+.name-entry[hidden] { display: none; }
+
+.name-entry input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 16px;
+  border: 1px solid rgba(255, 226, 190, 0.45);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+  font: 500 1.05rem var(--font);
+  outline: none;
+}
+
+.name-entry input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(255, 179, 107, 0.25); }
+
+.name-entry button {
+  padding: 10px 22px;
+  border: 1px solid rgba(255, 226, 190, 0.9);
+  border-radius: 14px;
+  background: rgba(255, 179, 107, 0.95);
+  color: #3a2418;
+  font: 600 1.05rem var(--font);
+  cursor: pointer;
 }
 
 .wardrobe {

@@ -25,6 +25,11 @@ const RIVER_FLOW = 0.6;
 const SAVE_KEY = "whisker-way-save-v1";
 const MAX_PIXEL_SCALE = 1.5;
 const MAX_RISE = 85;
+const MAX_DOUBLE_RISE = 150;
+const DOUBLE_GAP_LEVEL = 5;
+const FINAL_LEVEL = 10;
+const FINALE_DURATION = 8000;
+const LEADERBOARD_KEY = "whisker-way-leaderboard-v1";
 const JUMP_SAFETY = 0.85;
 const LOW_EDGE_CLEARANCE = 60;
 const SCENERY_TOP = 200;
@@ -92,6 +97,10 @@ let gameState = "title";
 let menuIndex = 0;
 let menuHitboxes = [];
 let gameTime = 0;
+let finishedRun = null;
+let leaderboardFrom = "title";
+let highlightDate = null;
+let finaleTimers = { hop: 0, hearts: 0, confetti: 0, rockets: 0 };
 let lastTime = performance.now();
 const keys = {};
 
@@ -169,14 +178,15 @@ function boxesOverlap(a, b) {
 }
 
 function loadSave() {
-  const defaults = { level: 1, bank: 0, owned: [], equipped: { collar: null, hat: null }, skin: "ginger", muted: false };
+  const defaults = { level: 1, bank: 0, owned: [], equipped: { collar: null, hat: null }, skin: "ginger", muted: false, run: null };
   try {
     const stored = JSON.parse(localStorage.getItem(SAVE_KEY));
     if (!stored) return defaults;
     return {
       ...defaults,
       ...stored,
-      level: Math.max(1, Number(stored.level) || 1),
+      level: Math.min(FINAL_LEVEL, Math.max(1, Number(stored.level) || 1)),
+      run: stored.run && typeof stored.run === "object" ? { ...newRun(1), ...stored.run } : null,
       bank: Math.max(0, Number(stored.bank) || 0),
       owned: Array.isArray(stored.owned) ? stored.owned : [],
       equipped: { ...defaults.equipped, ...(stored.equipped || {}) },
@@ -185,6 +195,42 @@ function loadSave() {
   } catch (error) {
     return defaults;
   }
+}
+
+function newRun(startLevel) {
+  return { startLevel, time: 0, fish: 0, falls: 0, bumps: 0, doubleJumps: 0 };
+}
+
+function countStat(name) {
+  if (save.run) save.run[name] += 1;
+}
+
+function loadLeaderboard() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(LEADERBOARD_KEY));
+    return Array.isArray(stored) ? stored.filter((entry) => entry && typeof entry.time === "number") : [];
+  } catch (error) {
+    return [];
+  }
+}
+
+function writeLeaderboard(entries) {
+  try {
+    localStorage.setItem(LEADERBOARD_KEY, JSON.stringify(entries));
+  } catch (error) {
+    // Storage can be unavailable (private browsing); the board still shows for this session.
+  }
+}
+
+function rankEntries(entries) {
+  return entries.slice().sort((a, b) => a.time - b.time || b.fish - a.fish || a.date.localeCompare(b.date));
+}
+
+function formatTime(ms) {
+  const totalSeconds = ms / 1000;
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds - minutes * 60;
+  return `${minutes}:${seconds < 10 ? "0" : ""}${seconds.toFixed(1)}`;
 }
 
 function writeSave() {
@@ -214,19 +260,32 @@ function generateLevel(levelNumber) {
 
   let cursor = 520;
   let previousY = platforms[0].y;
+  let previousKind = "plain";
+  const doubleChance = levelNumber >= DOUBLE_GAP_LEVEL ? Math.min(0.35, 0.15 + 0.04 * (levelNumber - DOUBLE_GAP_LEVEL)) : 0;
   for (;;) {
     const kind = pickPlatformKind(levelNumber, random);
     const moving = kind === "moving-x" || kind === "moving-y";
     const amplitude = kind === "moving-x" ? 40 + random() * 30 : 0;
-    const step = Math.min(MAX_RISE, 55 + tier * 6);
-    const y = clamp(previousY + (random() * 2 - 1) * step, 265, 420);
-    const reach = jumpReach(previousY - y) * JUMP_SAFETY;
-    const gap = Math.min(45 + random() * (40 + tier * 6), reach) + amplitude;
+    const needsDouble = previousKind !== "crumble" && kind !== "crumble" && random() < doubleChance;
+    let y;
+    let gapBase;
+    if (needsDouble) {
+      y = clamp(previousY - (-60 + random() * (MAX_DOUBLE_RISE + 60)), 265, 420);
+      const reach = doubleJumpReach(previousY - y) * JUMP_SAFETY;
+      const single = clamp(jumpReach(previousY - y) + cat.width, 45, reach);
+      gapBase = single + random() * (reach - single);
+    } else {
+      const step = Math.min(MAX_RISE, 55 + tier * 6);
+      y = clamp(previousY + (random() * 2 - 1) * step, 265, 420);
+      gapBase = Math.min(45 + random() * (40 + tier * 6), jumpReach(previousY - y) * JUMP_SAFETY);
+    }
+    const gap = gapBase + amplitude;
     const x = cursor + gap;
     const room = homeX - 180 - x - amplitude;
     if (room < 110) break;
     const width = Math.min(room, moving ? 100 + random() * 40 : Math.max(110, 130 + random() * 140 - tier * 4));
     const platform = makePlatform(x, y, width, 30);
+    platform.needsDouble = needsDouble;
     if (kind === "moving-x") {
       platform.motion = { axis: "x", amplitude, speed: 0.8 + random() * 0.5 + tier * 0.03, phase: random() * Math.PI * 2 };
     } else if (kind === "moving-y") {
@@ -239,6 +298,7 @@ function generateLevel(levelNumber) {
     if (kind === "plain") decoratePlatform(platform, levelNumber, random);
     cursor = x + width + amplitude;
     previousY = y;
+    previousKind = kind;
   }
 
   const distance = homeX - 120 - cursor;
@@ -254,16 +314,23 @@ function generateLevel(levelNumber) {
   drifters = buildDrifters(levelNumber);
 }
 
-function jumpReach(rise) {
+function jumpReach(rise, doubleAt = 0) {
   const speed = BASE_SPEED * SPRINT_MULTIPLIER;
   let vy = JUMP_POWER;
   let height = 0;
-  for (let frame = 1; frame < 200; frame++) {
+  for (let frame = 1; frame < 300; frame++) {
+    if (frame === doubleAt) vy = JUMP_POWER * 0.92;
     vy += GRAVITY;
     height -= vy;
-    if (vy > 0 && height < rise) return speed * frame;
+    if (vy > 0 && height < rise && frame > doubleAt) return speed * frame;
   }
   return 0;
+}
+
+function doubleJumpReach(rise) {
+  let best = 0;
+  for (let doubleAt = 2; doubleAt < 45; doubleAt++) best = Math.max(best, jumpReach(rise, doubleAt));
+  return best;
 }
 
 function makePlatform(x, y, width, height) {
@@ -383,6 +450,7 @@ generateLevel(level);
 const GAME_KEYS = ["w", "a", "s", "d", "p", "escape", "enter", "arrowup", "arrowdown", "arrowleft", "arrowright"];
 
 window.addEventListener("keydown", (event) => {
+  if (event.target instanceof HTMLInputElement) return;
   const key = event.key.toLowerCase();
   if (event.code === "Space" || GAME_KEYS.includes(key)) event.preventDefault();
   Sound.unlock();
@@ -408,7 +476,16 @@ function menuItems() {
     const items = [];
     if (save.level > 1) items.push({ label: `Continue · Level ${save.level}`, action: () => startGame(save.level) });
     items.push({ label: save.level > 1 ? "New game" : "Play", action: () => startGame(1) });
+    items.push({ label: "Leaderboard", action: () => openLeaderboard("title") });
     return items;
+  }
+  if (gameState === "results") {
+    return finishedRun && finishedRun.startLevel === 1 ? [] : [{ label: "View leaderboard", action: () => openLeaderboard("finish") }];
+  }
+  if (gameState === "leaderboard") {
+    return leaderboardFrom === "finish"
+      ? [{ label: "Play again", action: () => startGame(1) }, { label: "Title screen", action: quitToTitle }]
+      : [{ label: "Back", action: () => { gameState = "title"; menuIndex = 0; } }];
   }
   return [
     { label: "Resume", action: closePause },
@@ -420,10 +497,11 @@ function menuItems() {
 
 function handleMenuKey(key, code) {
   const items = menuItems();
-  if (key === "w" || key === "arrowup") {
+  if (!items.length) return;
+  if (key === "w" || key === "arrowup" || key === "a" || key === "arrowleft") {
     menuIndex = (menuIndex + items.length - 1) % items.length;
     Sound.play("tick");
-  } else if (key === "s" || key === "arrowdown") {
+  } else if (key === "s" || key === "arrowdown" || key === "d" || key === "arrowright") {
     menuIndex = (menuIndex + 1) % items.length;
     Sound.play("tick");
   } else if (code === "Space" || key === "enter") {
@@ -464,8 +542,10 @@ canvas.addEventListener("click", (event) => {
 });
 
 function startGame(startLevel) {
+  hideNameForm();
   level = startLevel;
   save.level = startLevel;
+  if (startLevel === 1 || !save.run) save.run = newRun(startLevel);
   writeSave();
   restartLevel();
   gameState = "playing";
@@ -494,6 +574,9 @@ function closePause() {
 }
 
 function quitToTitle() {
+  hideNameForm();
+  writeSave();
+  level = save.level;
   restartLevel();
   gameState = "title";
   menuIndex = 0;
@@ -533,6 +616,7 @@ function jump() {
     cat.jumps = 2;
     cat.doubleJumpReadyAt = gameTime + DOUBLE_JUMP_COOLDOWN;
     cat.sniffing = false;
+    countStat("doubleJumps");
     Sound.play("doubleJump");
     spawn({ x: feetX, y: feetY, size: 6, grow: 1.1, decay: 0.045, color: "#ffffff", shape: "ring", glow: true });
     for (let i = 0; i < 8; i++) {
@@ -579,6 +663,7 @@ function knockBack(fromX) {
   cat.jumps = 1;
   cat.stunnedUntil = gameTime + 450;
   cat.invulnerableUntil = gameTime + 1300;
+  countStat("bumps");
   for (let i = 0; i < 6; i++) {
     const angle = -Math.PI / 2 + (i - 2.5) * 0.45;
     spawn({
@@ -668,6 +753,7 @@ function stepCat(delta) {
 
   if (cat.y + cat.height >= RIVER_Y + 4) {
     createSplash(cat.x + cat.width / 2, RIVER_Y);
+    countStat("falls");
     Sound.play("splash");
     Sound.setPurr(false);
     cat.sinkingUntil = gameTime + SINK_DURATION;
@@ -809,6 +895,9 @@ function updateCreatures(delta) {
 function update(delta) {
   updatePlatforms(delta);
   updateCreatures(delta);
+  if (gameState === "playing" && !transition && save.run) save.run.time += delta * 16.67;
+  if (transition && transition.phase === "finale") updateFinale(delta);
+  if (gameState === "results" || gameState === "leaderboard") updateEncoreFireworks(delta);
   if (gameState === "playing") {
     if (cat.sinkingUntil) {
       if (gameTime >= cat.sinkingUntil) {
@@ -854,12 +943,17 @@ function respawn() {
 }
 
 function beginLevelTransition() {
-  transition = { phase: "celebrate", startedAt: gameTime, banked: score };
   save.bank += score;
+  if (save.run) save.run.fish += score;
+  Sound.setPurr(false);
+  if (level >= FINAL_LEVEL) {
+    beginFinale();
+    return;
+  }
+  transition = { phase: "celebrate", startedAt: gameTime, banked: score };
   save.level = level + 1;
   writeSave();
   refreshWardrobe();
-  Sound.setPurr(false);
   Sound.play("fanfare");
   Sound.play("meow");
   pendingRockets = [0, 220, 480, 760, 1000].map((delay) => ({
@@ -883,7 +977,120 @@ function updateTransition() {
     transition = { phase: "in", startedAt: gameTime };
   } else if (transition.phase === "in" && elapsed > 1200) {
     transition = null;
+  } else if (transition.phase === "finale" && elapsed > FINALE_DURATION) {
+    transition = { phase: "finaleOut", startedAt: gameTime };
+  } else if (transition.phase === "finaleOut" && elapsed > 900) {
+    transition = null;
+    showResults();
   }
+}
+
+const CONFETTI_COLORS = ["#ff7eb6", "#ffd36b", "#8fe27b", "#7cc7ff", "#c9a2ff", "#ff9a6b"];
+
+function beginFinale() {
+  transition = { phase: "finale", startedAt: gameTime, banked: score };
+  finishedRun = save.run ? { ...save.run } : null;
+  save.run = null;
+  save.level = 1;
+  writeSave();
+  refreshWardrobe();
+  Sound.play("finale");
+  Sound.play("meow");
+  finaleTimers = { hop: 30, hearts: 0, confetti: 0, rockets: 0 };
+  pendingRockets = [];
+}
+
+function updateFinale(delta) {
+  const elapsed = gameTime - transition.startedAt;
+  finaleTimers.rockets -= delta;
+  if (elapsed < FINALE_DURATION - 1500 && finaleTimers.rockets <= 0) {
+    finaleTimers.rockets = 8 + Math.random() * 12;
+    launchRocket(cameraX + 120 + Math.random() * (VIEW_W - 240), Math.random() < 0.3 ? "heart" : "burst", Math.random() * 2.2);
+  }
+  finaleTimers.confetti -= delta;
+  while (finaleTimers.confetti <= 0) {
+    finaleTimers.confetti += 1.2;
+    spawn({
+      x: cameraX + Math.random() * VIEW_W, y: -10, vx: (Math.random() - 0.5) * 1.2, vy: 1 + Math.random() * 1.2,
+      gravity: 0.02, drag: 0.99, decay: 0.004, size: 2.5 + Math.random() * 2.5,
+      color: CONFETTI_COLORS[Math.floor(Math.random() * CONFETTI_COLORS.length)],
+      shape: "confetti", angle: Math.random() * Math.PI * 2, spin: (Math.random() - 0.5) * 0.3,
+    });
+  }
+  if (cat.grounded) {
+    finaleTimers.hop -= delta;
+    if (finaleTimers.hop <= 0) {
+      finaleTimers.hop = 36 + Math.random() * 12;
+      cat.vy = -7;
+      cat.grounded = false;
+      cat.ground = null;
+      if (Math.random() < 0.35) cat.facing *= -1;
+      spawnDust(cat.x + cat.width / 2, cat.y + cat.height, 4);
+    }
+  }
+  finaleTimers.hearts -= delta;
+  if (finaleTimers.hearts <= 0) {
+    finaleTimers.hearts = 10;
+    spawn({
+      x: cat.x + cat.width / 2 + (Math.random() - 0.5) * 30, y: cat.y + 4,
+      vx: (Math.random() - 0.5) * 0.8, vy: -0.8 - Math.random() * 0.5, gravity: -0.005, drag: 0.99,
+      decay: 0.012, size: 4 + Math.random() * 2.5, color: Math.random() > 0.5 ? "#ff9ec7" : "#ffd1e6", shape: "heart", glow: true,
+    });
+  }
+}
+
+function updateEncoreFireworks(delta) {
+  finaleTimers.rockets -= delta;
+  if (finaleTimers.rockets <= 0) {
+    finaleTimers.rockets = 70 + Math.random() * 60;
+    launchRocket(cameraX + 150 + Math.random() * (VIEW_W - 300), Math.random() < 0.3 ? "heart" : "burst", Math.random() * 1.5);
+  }
+}
+
+function showResults() {
+  gameState = "results";
+  menuIndex = 0;
+  const form = document.querySelector("#nameForm");
+  if (form && finishedRun && finishedRun.startLevel === 1) {
+    form.hidden = false;
+    const input = document.querySelector("#playerName");
+    input.value = "";
+    input.focus();
+  }
+}
+
+function hideNameForm() {
+  const form = document.querySelector("#nameForm");
+  if (form) form.hidden = true;
+}
+
+function submitName(event) {
+  event.preventDefault();
+  if (!finishedRun) return;
+  const input = document.querySelector("#playerName");
+  const entry = {
+    name: (input.value.trim() || "Anonymous cat").slice(0, 16),
+    time: Math.round(finishedRun.time),
+    fish: finishedRun.fish,
+    falls: finishedRun.falls,
+    bumps: finishedRun.bumps,
+    doubleJumps: finishedRun.doubleJumps,
+    coat: cat.skin,
+    date: new Date().toISOString(),
+  };
+  writeLeaderboard(rankEntries([...loadLeaderboard(), entry]).slice(0, 50));
+  highlightDate = entry.date;
+  finishedRun = null;
+  input.blur();
+  Sound.play("buy");
+  openLeaderboard("finish");
+}
+
+function openLeaderboard(from) {
+  hideNameForm();
+  leaderboardFrom = from;
+  gameState = "leaderboard";
+  menuIndex = 0;
 }
 
 /* ---------- particles ---------- */
@@ -925,11 +1132,11 @@ function createSplash(x, y) {
   }
 }
 
-function launchRocket(x) {
+function launchRocket(x, pattern = "burst", power = 0) {
   const palette = ROCKET_PALETTES[Math.floor(Math.random() * ROCKET_PALETTES.length)];
   spawn({
-    x, y: 400, vx: (Math.random() - 0.5) * 0.8, vy: -7 - Math.random() * 1.6, gravity: 0.16,
-    decay: 0.003, size: 2.5, color: "#fff4d6", shape: "rocket", glow: true, palette,
+    x, y: 400, vx: (Math.random() - 0.5) * 0.8, vy: -7 - Math.random() * 1.6 - power, gravity: 0.16,
+    decay: 0.003, size: 2.5, color: "#fff4d6", shape: "rocket", glow: true, palette, pattern,
   });
   Sound.play("launch");
 }
@@ -937,6 +1144,18 @@ function launchRocket(x) {
 function explode(rocket) {
   Sound.play("pop");
   spawn({ x: rocket.x, y: rocket.y, size: 34, decay: 0.09, color: "#fff6e0", shape: "soft", glow: true, alpha: 0.6 });
+  if (rocket.pattern === "heart") {
+    for (let i = 0; i < 60; i++) {
+      const t = (i / 60) * Math.PI * 2;
+      const hx = 16 * Math.pow(Math.sin(t), 3);
+      const hy = -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t));
+      spawn({
+        x: rocket.x, y: rocket.y, vx: hx * 0.17, vy: hy * 0.17, gravity: 0.02, drag: 0.965,
+        decay: 0.012, size: 2.2, color: i % 2 ? "#ff7eb6" : "#ffd1e6", shape: "spark", glow: true,
+      });
+    }
+    return;
+  }
   for (let i = 0; i < 52; i++) {
     const angle = (i / 52) * Math.PI * 2 + Math.random() * 0.12;
     const speed = 2 + Math.random() * 3.4;
@@ -958,6 +1177,7 @@ function updateParticles(delta) {
     p.y += p.vy * delta;
     p.life -= p.decay * delta;
     p.size += p.grow * delta;
+    if (p.spin) p.angle += p.spin * delta;
     if (p.shape === "rocket" && p.vy > -1.2 && !p.exploded) {
       p.exploded = true;
       p.life = 0;
@@ -1023,6 +1243,15 @@ function drawParticle(g, p) {
       g.beginPath();
       g.ellipse(p.x, p.y, p.size * 0.8, p.size * 1.3, Math.atan2(p.vy, p.vx) + Math.PI / 2, 0, Math.PI * 2);
       g.fill();
+      break;
+    case "confetti":
+      g.save();
+      g.translate(p.x, p.y);
+      g.rotate(p.angle);
+      g.scale(1, 0.25 + Math.abs(Math.cos(p.angle * 1.7)) * 0.75);
+      g.fillStyle = rgba(p.color, alpha);
+      g.fillRect(-p.size, -p.size * 0.5, p.size * 2, p.size);
+      g.restore();
       break;
     case "text":
       g.font = `600 ${p.size}px ${FONT}`;
@@ -2877,6 +3106,10 @@ function drawHud(g, night, twilight, phase) {
   g.fillStyle = "#ffffff";
   g.font = `600 20px ${FONT}`;
   g.fillText(String(level), 134, 51);
+  const levelWidth = g.measureText(String(level)).width;
+  g.fillStyle = "rgba(255,255,255,0.55)";
+  g.font = `600 14px ${FONT}`;
+  g.fillText(`/${FINAL_LEVEL}`, 136 + levelWidth, 52);
 
   const label = night > 0.62 ? "Night" : twilight > 0.45 ? (phase < 0.5 ? "Dusk" : "Dawn") : "Day";
   const chipW = 118;
@@ -2980,6 +3213,34 @@ function drawTransition(g) {
       g.fillText(`+${transition.banked} fish banked`, VIEW_W / 2, 156 - 6 * (1 - b));
     }
     g.shadowBlur = 0;
+  } else if (transition.phase === "finale" || transition.phase === "finaleOut") {
+    const out = transition.phase === "finaleOut" ? clamp(elapsed / 900, 0, 1) : 0;
+    if (out > 0) {
+      g.fillStyle = `rgba(14,10,32,${out * 0.6})`;
+      g.fillRect(0, 0, VIEW_W, VIEW_H);
+    }
+    const intro = transition.phase === "finale" ? clamp(elapsed / 500, 0, 1) : 1;
+    const a = intro * (1 - out);
+    const pop = 1 + 0.18 * Math.sin(intro * Math.PI);
+    g.shadowColor = "rgba(40,20,60,0.55)";
+    g.shadowBlur = 14;
+    g.save();
+    g.translate(VIEW_W / 2, 116);
+    g.scale(pop, pop);
+    g.fillStyle = `rgba(255,248,232,${a})`;
+    g.font = `600 46px ${FONT}`;
+    g.fillText("You made it home!", 0, 0);
+    g.restore();
+    const b = transition.phase === "finale" ? clamp((elapsed - 450) / 400, 0, 1) * (1 - out) : 1 - out;
+    g.fillStyle = `rgba(255,226,190,${b})`;
+    g.font = `600 20px ${FONT}`;
+    g.fillText(`All ${FINAL_LEVEL} levels complete`, VIEW_W / 2, 160);
+    if (transition.banked > 0) {
+      g.fillStyle = `rgba(255,215,130,${b})`;
+      g.font = `600 18px ${FONT}`;
+      g.fillText(`+${transition.banked} fish banked`, VIEW_W / 2, 190);
+    }
+    g.shadowBlur = 0;
   } else {
     const fade = transition.phase === "out"
       ? clamp(elapsed / 900, 0, 1)
@@ -2993,20 +3254,22 @@ function drawTransition(g) {
       g.fillText(`Level ${transition.phase === "out" ? level + 1 : level}`, VIEW_W / 2, VIEW_H / 2 - 8);
       g.fillStyle = `rgba(255,244,222,${textAlpha * 0.7})`;
       g.font = `400 17px ${FONT}`;
-      g.fillText("The path grows trickier…", VIEW_W / 2, VIEW_H / 2 + 32);
+      const upcoming = transition.phase === "out" ? level + 1 : level;
+      g.fillText(upcoming === FINAL_LEVEL ? "The final stretch home…" : "The path grows trickier…", VIEW_W / 2, VIEW_H / 2 + 32);
     }
   }
   g.textAlign = "left";
   g.textBaseline = "alphabetic";
 }
 
-function drawMenu(g, items, top) {
+function drawMenu(g, items, top, horizontal = false) {
   menuHitboxes = [];
-  const w = 280;
+  const w = horizontal ? 220 : 280;
   const h = 46;
+  const rowLeft = (VIEW_W - (items.length * w + (items.length - 1) * 16)) / 2;
   items.forEach((item, index) => {
-    const x = (VIEW_W - w) / 2;
-    const y = top + index * (h + 12);
+    const x = horizontal ? rowLeft + index * (w + 16) : (VIEW_W - w) / 2;
+    const y = horizontal ? top : top + index * (h + 12);
     const selected = index === menuIndex;
     roundRectPath(g, x, y, w, h, 14);
     g.fillStyle = selected ? "rgba(255,179,107,0.95)" : "rgba(255,255,255,0.1)";
@@ -3018,7 +3281,7 @@ function drawMenu(g, items, top) {
     g.font = `600 19px ${FONT}`;
     g.textAlign = "center";
     g.textBaseline = "middle";
-    g.fillText(item.label, VIEW_W / 2, y + h / 2 + 1);
+    g.fillText(item.label, x + w / 2, y + h / 2 + 1);
     menuHitboxes.push({ x, y, w, h, index });
   });
   g.textAlign = "left";
@@ -3075,6 +3338,121 @@ function drawPause(g) {
   g.textAlign = "left";
   g.textBaseline = "alphabetic";
   drawMenu(g, menuItems(), 190);
+}
+
+function drawResultsPanel(g, x, y, w, h) {
+  g.fillStyle = "rgba(14,10,32,0.6)";
+  g.fillRect(0, 0, VIEW_W, VIEW_H);
+  roundRectPath(g, x, y, w, h, 22);
+  g.fillStyle = "rgba(34,26,64,0.86)";
+  g.fill();
+  g.strokeStyle = "rgba(255,226,190,0.35)";
+  g.lineWidth = 1.4;
+  g.stroke();
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+}
+
+function drawResults(g) {
+  drawResultsPanel(g, 150, 46, 660, 420);
+  g.fillStyle = "#fff4e2";
+  g.font = `600 38px ${FONT}`;
+  g.fillText("You made it home!", VIEW_W / 2, 96);
+  g.fillStyle = "rgba(255,226,190,0.85)";
+  g.font = `400 17px ${FONT}`;
+  g.fillText(`All ${FINAL_LEVEL} levels complete`, VIEW_W / 2, 132);
+  const run = finishedRun || newRun(1);
+  const stats = [
+    ["TIME", formatTime(run.time)],
+    ["FISH", String(run.fish)],
+    ["FALLS", String(run.falls)],
+    ["BUMPS", String(run.bumps)],
+    ["DOUBLE JUMPS", String(run.doubleJumps)],
+  ];
+  const tileW = 116;
+  const left = (VIEW_W - (stats.length * tileW + (stats.length - 1) * 12)) / 2;
+  stats.forEach(([label, value], index) => {
+    const x = left + index * (tileW + 12);
+    roundRectPath(g, x, 160, tileW, 86, 14);
+    g.fillStyle = "rgba(255,255,255,0.08)";
+    g.fill();
+    g.fillStyle = "rgba(255,255,255,0.6)";
+    g.font = `600 11px ${FONT}`;
+    g.fillText(label, x + tileW / 2, 184);
+    g.fillStyle = index === 0 ? "#ffd98a" : "#ffffff";
+    g.font = `600 24px ${FONT}`;
+    g.fillText(value, x + tileW / 2, 218);
+  });
+  if (run.startLevel === 1) {
+    g.fillStyle = "#fff4e2";
+    g.font = `600 18px ${FONT}`;
+    g.fillText("Enter your name for the leaderboard", VIEW_W / 2, 292);
+    const candidate = { name: "", time: Math.round(run.time), fish: run.fish, date: "~" };
+    const rank = rankEntries([...loadLeaderboard(), candidate]).indexOf(candidate) + 1;
+    g.fillStyle = "rgba(255,226,190,0.8)";
+    g.font = `400 15px ${FONT}`;
+    g.fillText(`That's #${rank} on the board · press Enter to save`, VIEW_W / 2, 412);
+  } else {
+    g.fillStyle = "rgba(255,226,190,0.85)";
+    g.font = `400 16px ${FONT}`;
+    g.fillText(`This run started at level ${run.startLevel}, so it isn't ranked.`, VIEW_W / 2, 296);
+    g.fillText("Start a new game from level 1 to get on the leaderboard.", VIEW_W / 2, 320);
+    drawMenu(g, menuItems(), 362);
+  }
+  g.textAlign = "left";
+  g.textBaseline = "alphabetic";
+}
+
+function drawLeaderboard(g) {
+  drawResultsPanel(g, 150, 34, 660, 396);
+  g.fillStyle = "#fff4e2";
+  g.font = `600 34px ${FONT}`;
+  g.fillText("Leaderboard", VIEW_W / 2, 74);
+  const entries = rankEntries(loadLeaderboard());
+  const columns = [[190, "#", "center"], [218, "NAME", "left"], [470, "TIME", "right"], [550, "FISH", "right"], [620, "FALLS", "right"], [770, "DATE", "right"]];
+  g.font = `600 11px ${FONT}`;
+  g.fillStyle = "rgba(255,255,255,0.55)";
+  columns.forEach(([x, label, align]) => { g.textAlign = align; g.fillText(label, x, 112); });
+  if (!entries.length) {
+    g.textAlign = "center";
+    g.fillStyle = "rgba(255,226,190,0.85)";
+    g.font = `400 17px ${FONT}`;
+    g.fillText(`No runs yet. Finish all ${FINAL_LEVEL} levels to get on the board!`, VIEW_W / 2, 240);
+  }
+  entries.slice(0, 10).forEach((entry, index) => {
+    const y = 140 + index * 26;
+    const mine = entry.date === highlightDate;
+    if (mine) {
+      roundRectPath(g, 172, y - 12, 616, 24, 8);
+      g.fillStyle = "rgba(255,179,107,0.28)";
+      g.fill();
+    }
+    const date = new Date(entry.date);
+    const cells = [
+      String(index + 1),
+      entry.name,
+      formatTime(entry.time),
+      String(entry.fish),
+      String(entry.falls ?? 0),
+      Number.isNaN(date.getTime()) ? "" : date.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+    ];
+    g.font = `${index < 3 || mine ? 600 : 400} 16px ${FONT}`;
+    columns.forEach(([x, , align], column) => {
+      g.textAlign = align;
+      g.fillStyle = column === 0 && index < 3 ? ["#ffd36b", "#e3e7ef", "#e6a874"][index] : mine ? "#ffe8c8" : "#fff6ea";
+      g.fillText(cells[column], x, y + 1);
+    });
+  });
+  const myRank = entries.findIndex((entry) => entry.date === highlightDate);
+  if (myRank >= 10) {
+    g.textAlign = "center";
+    g.fillStyle = "#ffd98a";
+    g.font = `600 15px ${FONT}`;
+    g.fillText(`Your run: #${myRank + 1} · ${formatTime(entries[myRank].time)} · ${entries[myRank].fish} fish`, VIEW_W / 2, 408);
+  }
+  drawMenu(g, menuItems(), 448, true);
+  g.textAlign = "left";
+  g.textBaseline = "alphabetic";
 }
 
 /* ---------- frame ---------- */
@@ -3140,8 +3518,17 @@ function render() {
   drawGlows(ctx, night, t);
   ctx.restore();
   drawVignette(ctx);
+  menuHitboxes = [];
   if (gameState === "title") {
     drawTitle(ctx);
+    return;
+  }
+  if (gameState === "results") {
+    drawResults(ctx);
+    return;
+  }
+  if (gameState === "leaderboard") {
+    drawLeaderboard(ctx);
     return;
   }
   drawHud(ctx, night, twilight, phase);
@@ -3272,6 +3659,11 @@ if (soundButton) {
     soundButton.blur();
   });
 }
+
+const nameForm = document.querySelector("#nameForm");
+if (nameForm) nameForm.addEventListener("submit", submitName);
+window.addEventListener("pagehide", writeSave);
+document.addEventListener("visibilitychange", () => { if (document.hidden) writeSave(); });
 
 function frame(now) {
   const elapsed = Math.min(100, Math.max(0, now - lastTime));
