@@ -25,22 +25,6 @@ body {
 
 .shell { padding-bottom: 48px; }
 
-body:not([data-state="title"]) {
-  overflow: hidden;
-  background: #07060f;
-}
-
-body:not([data-state="title"]) .shell {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100vh;
-  height: 100dvh;
-  padding: 0;
-}
-
-body:not([data-state="title"]) .wardrobe { display: none; }
-
 .eyebrow {
   margin: 0 0 6px;
   color: var(--accent);
@@ -54,7 +38,6 @@ h2 { margin: 0; font-size: 1.35rem; font-weight: 600; }
 
 .stage {
   position: relative;
-  flex: none;
   overflow: hidden;
   width: min(100%, 100vh * 16 / 9);
   width: min(100%, 100dvh * 16 / 9);
