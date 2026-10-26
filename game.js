@@ -97,6 +97,7 @@ let gameState = "title";
 let menuIndex = 0;
 let menuHitboxes = [];
 let gameTime = 0;
+let pendingDoubleJumpAt = 0;
 let finishedRun = null;
 let leaderboardFrom = "title";
 let highlightDate = null;
@@ -477,6 +478,7 @@ function menuItems() {
     if (save.level > 1) items.push({ label: `Continue · Level ${save.level}`, action: () => startGame(save.level) });
     items.push({ label: save.level > 1 ? "New game" : "Play", action: () => startGame(1) });
     items.push({ label: "Leaderboard", action: () => openLeaderboard("title") });
+    items.push({ label: `Sound: ${save.muted ? "Off" : "On"}`, action: toggleMute });
     return items;
   }
   if (gameState === "results") {
@@ -586,14 +588,6 @@ function toggleMute() {
   save.muted = !save.muted;
   Sound.setMuted(save.muted);
   writeSave();
-  updateSoundButton();
-}
-
-function updateSoundButton() {
-  const button = document.querySelector("#soundToggle");
-  if (!button) return;
-  button.textContent = save.muted ? "Sound off" : "Sound on";
-  button.setAttribute("aria-pressed", String(!save.muted));
 }
 
 /* ---------- gameplay ---------- */
@@ -906,6 +900,10 @@ function update(delta) {
       }
     } else {
       stepCat(delta);
+    }
+    if (pendingDoubleJumpAt && gameTime >= pendingDoubleJumpAt) {
+      pendingDoubleJumpAt = 0;
+      if (!cat.grounded && cat.jumps === 1) jump();
     }
   }
 
@@ -3294,22 +3292,17 @@ function drawTitle(g) {
   shade.addColorStop(1, "rgba(16,12,40,0.25)");
   g.fillStyle = shade;
   g.fillRect(0, 0, VIEW_W, VIEW_H);
-  g.save();
-  g.translate(VIEW_W / 2 - 262, 150);
-  g.scale(1.6, 1.6);
-  drawCatSprite(g, cat.skin, { ...IDLE_POSE, time: gameTime }, save.equipped);
-  g.restore();
   g.textAlign = "center";
   g.textBaseline = "middle";
   g.shadowColor = "rgba(20,10,40,0.6)";
   g.shadowBlur = 18;
   g.fillStyle = "#fff4e2";
   g.font = `600 64px ${FONT}`;
-  g.fillText("Whisker Way", VIEW_W / 2 + 40, 118);
+  g.fillText("Whisker Way", VIEW_W / 2, 118);
   g.shadowBlur = 0;
   g.fillStyle = "rgba(255,226,190,0.85)";
   g.font = `400 18px ${FONT}`;
-  g.fillText("A cozy cat platformer", VIEW_W / 2 + 40, 164);
+  g.fillText("A cozy cat platformer -- by Izabelle Tsai", VIEW_W / 2, 164);
   if (save.bank > 0) {
     drawFishShape(g, VIEW_W / 2 - 40, 200, 0.9, -0.15);
     g.fillStyle = "#ffd98a";
@@ -3317,14 +3310,54 @@ function drawTitle(g) {
     g.textAlign = "left";
     g.fillText(`${save.bank} fish saved`, VIEW_W / 2 - 22, 201);
   }
-  drawMenu(g, menuItems(), 248);
-  g.textAlign = "center";
-  g.textBaseline = "middle";
-  g.fillStyle = "rgba(255,255,255,0.6)";
-  g.font = `400 14px ${FONT}`;
-  g.fillText("W / S to choose · Space to start · M to mute", VIEW_W / 2, VIEW_H - 34);
+  drawMenu(g, menuItems(), 230);
+  drawControlsLegend(g, VIEW_H - 42);
   g.textAlign = "left";
   g.textBaseline = "alphabetic";
+}
+
+const COARSE_POINTER = window.matchMedia("(pointer: coarse)");
+
+function drawControlsLegend(g, y) {
+  const groups = COARSE_POINTER.matches
+    ? [[["Tap"], "Choose"], [["◀", "▶"], "Move"], [["▲"], "Jump"], [["▼"], "Crouch"], [["Center"], "Double jump"], [["Left block"], "Sprint"]]
+    : [[["A", "D"], "Move"], [["W"], "Jump · twice to double jump"], [["S"], "Crouch"], [["Shift"], "Sprint"], [["Space"], "Select"], [["P"], "Pause"], [["M"], "Sound"]];
+  const capFont = `600 13px ${FONT}`;
+  const labelFont = `400 14px ${FONT}`;
+  const layout = groups.map(([caps, label]) => {
+    g.font = capFont;
+    const capWidths = caps.map((cap) => Math.max(24, g.measureText(cap).width + 14));
+    g.font = labelFont;
+    const labelWidth = g.measureText(label).width;
+    const width = capWidths.reduce((sum, w) => sum + w, 0) + (caps.length - 1) * 4 + 7 + labelWidth;
+    return { caps, label, capWidths, labelWidth, width };
+  });
+  const total = layout.reduce((sum, item) => sum + item.width, 0) + (layout.length - 1) * 20;
+  let x = (VIEW_W - total) / 2;
+  glassPanel(g, x - 16, y - 19, total + 32, 38);
+  g.textBaseline = "middle";
+  for (const item of layout) {
+    item.caps.forEach((cap, index) => {
+      const w = item.capWidths[index];
+      roundRectPath(g, x, y - 12, w, 24, 6);
+      g.fillStyle = "rgba(255,255,255,0.14)";
+      g.fill();
+      g.strokeStyle = "rgba(255,255,255,0.35)";
+      g.lineWidth = 1;
+      g.stroke();
+      g.fillStyle = "#fff6ea";
+      g.font = capFont;
+      g.textAlign = "center";
+      g.fillText(cap, x + w / 2, y + 1);
+      x += w + 4;
+    });
+    x += 3;
+    g.fillStyle = "rgba(255,255,255,0.78)";
+    g.font = labelFont;
+    g.textAlign = "left";
+    g.fillText(item.label, x, y + 1);
+    x += item.labelWidth + 20;
+  }
 }
 
 function drawPause(g) {
@@ -3651,14 +3684,36 @@ document.querySelectorAll(".skin-button").forEach((button) => {
   });
 });
 
-const soundButton = document.querySelector("#soundToggle");
-if (soundButton) {
-  soundButton.addEventListener("click", () => {
+document.querySelectorAll(".touch-zone").forEach((zone) => {
+  const key = zone.dataset.touchKey;
+  const action = zone.dataset.touchAction;
+  const release = () => {
+    if (key) keys[key] = false;
+    zone.classList.remove("is-pressed");
+  };
+  zone.addEventListener("pointerdown", (event) => {
+    event.preventDefault();
     Sound.unlock();
-    toggleMute();
-    soundButton.blur();
+    if (gameState !== "playing" || transition) return;
+    zone.setPointerCapture(event.pointerId);
+    zone.classList.add("is-pressed");
+    if (action === "double-jump") {
+      if (cat.grounded) {
+        jump();
+        pendingDoubleJumpAt = gameTime + 300;
+      } else if (cat.jumps === 1) {
+        jump();
+      }
+    } else if (key === "w") {
+      jump();
+    } else {
+      keys[key] = true;
+    }
   });
-}
+  zone.addEventListener("pointerup", release);
+  zone.addEventListener("pointercancel", release);
+  zone.addEventListener("lostpointercapture", release);
+});
 
 const nameForm = document.querySelector("#nameForm");
 if (nameForm) nameForm.addEventListener("submit", submitName);
@@ -3678,15 +3733,15 @@ function frame(now) {
     }
   }
   Sound.setNight(dayCycle().night);
+  if (document.body.dataset.state !== gameState) document.body.dataset.state = gameState;
   render();
   requestAnimationFrame(frame);
 }
 
-window.addEventListener("resize", resizeCanvas);
+new ResizeObserver(resizeCanvas).observe(canvas);
 Sound.setMuted(save.muted);
 resizeCanvas();
 buildShop();
 refreshWardrobe();
-updateSoundButton();
 render();
 requestAnimationFrame(frame);
