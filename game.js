@@ -97,7 +97,7 @@ let gameState = "title";
 let menuIndex = 0;
 let menuHitboxes = [];
 let gameTime = 0;
-let pendingDoubleJumpAt = 0;
+let touchSprint = false;
 let finishedRun = null;
 let leaderboardFrom = "title";
 let highlightDate = null;
@@ -577,6 +577,7 @@ function closePause() {
 
 function quitToTitle() {
   hideNameForm();
+  setTouchSprint(false);
   writeSave();
   level = save.level;
   restartLevel();
@@ -591,6 +592,10 @@ function toggleMute() {
 }
 
 /* ---------- gameplay ---------- */
+
+function sprinting() {
+  return Boolean(keys.shift) || touchSprint;
+}
 
 function jump() {
   if (gameState !== "playing" || transition || cat.sinkingUntil || gameTime < cat.stunnedUntil) return;
@@ -677,8 +682,8 @@ function stepCat(delta) {
   }
   const forcedCrouch = cat.grounded && blockedOverhead();
   cat.crouching = cat.grounded && !cat.sniffing && !frozen && (Boolean(keys.s) || forcedCrouch);
-  const stride = keys.shift ? 8 : 6;
-  const speed = BASE_SPEED * (keys.shift ? SPRINT_MULTIPLIER : 1) * (cat.crouching ? CROUCH_MULTIPLIER : 1);
+  const stride = sprinting() ? 8 : 6;
+  const speed = BASE_SPEED * (sprinting() ? SPRINT_MULTIPLIER : 1) * (cat.crouching ? CROUCH_MULTIPLIER : 1);
   const canMove = !cat.sniffing && !frozen && !stunned;
   if (canMove && (keys.arrowleft || keys.a)) { cat.vx = -speed; cat.facing = -1; }
   else if (canMove && (keys.arrowright || keys.d)) { cat.vx = speed; cat.facing = 1; }
@@ -770,7 +775,7 @@ function stepCat(delta) {
   cat.crouchAmount += ((cat.crouching ? 1 : 0) - cat.crouchAmount) * ease;
   cat.sniffAmount += ((cat.sniffing ? 1 : 0) - cat.sniffAmount) * ease * 0.6;
 
-  if (keys.shift && move > 0.5) {
+  if (sprinting() && move > 0.5) {
     cat.dustTimer += Math.abs(cat.vx) * delta;
     if (cat.dustTimer > 26) {
       cat.dustTimer = 0;
@@ -900,10 +905,6 @@ function update(delta) {
       }
     } else {
       stepCat(delta);
-    }
-    if (pendingDoubleJumpAt && gameTime >= pendingDoubleJumpAt) {
-      pendingDoubleJumpAt = 0;
-      if (!cat.grounded && cat.jumps === 1) jump();
     }
   }
 
@@ -3027,7 +3028,7 @@ function catPose() {
   return {
     phase: cat.animTime,
     move,
-    stride: keys.shift ? 8 : 6,
+    stride: sprinting() ? 8 : 6,
     crouch: Math.max(cat.crouchAmount, landingSquat() * 0.55),
     pitch: cat.pitch,
     air: cat.grounded ? null : clamp(cat.vy / 10, -1, 1),
@@ -3684,35 +3685,75 @@ document.querySelectorAll(".skin-button").forEach((button) => {
   });
 });
 
-document.querySelectorAll(".touch-zone").forEach((zone) => {
-  const key = zone.dataset.touchKey;
-  const action = zone.dataset.touchAction;
-  const release = () => {
-    if (key) keys[key] = false;
-    zone.classList.remove("is-pressed");
-  };
-  zone.addEventListener("pointerdown", (event) => {
-    event.preventDefault();
-    Sound.unlock();
-    if (gameState !== "playing" || transition) return;
-    zone.setPointerCapture(event.pointerId);
-    zone.classList.add("is-pressed");
-    if (action === "double-jump") {
-      if (cat.grounded) {
-        jump();
-        pendingDoubleJumpAt = gameTime + 300;
-      } else if (cat.jumps === 1) {
-        jump();
-      }
-    } else if (key === "w") {
-      jump();
-    } else {
-      keys[key] = true;
-    }
-  });
-  zone.addEventListener("pointerup", release);
-  zone.addEventListener("pointercancel", release);
-  zone.addEventListener("lostpointercapture", release);
+const JOYSTICK_DEAD_ZONE = 0.35;
+const JOYSTICK_CROUCH = 0.5;
+const joystick = document.querySelector(".touch-joystick");
+const joystickKnob = joystick.querySelector(".touch-knob");
+let joystickPointer = null;
+
+function moveJoystick(event) {
+  const rect = joystick.getBoundingClientRect();
+  const travel = rect.width * 0.29;
+  let dx = event.clientX - (rect.left + rect.width / 2);
+  let dy = event.clientY - (rect.top + rect.height / 2);
+  const distance = Math.hypot(dx, dy);
+  if (distance > travel) {
+    dx *= travel / distance;
+    dy *= travel / distance;
+  }
+  joystickKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+  keys.a = dx / travel < -JOYSTICK_DEAD_ZONE;
+  keys.d = dx / travel > JOYSTICK_DEAD_ZONE;
+  keys.s = dy / travel > JOYSTICK_CROUCH;
+}
+
+function releaseJoystick() {
+  joystickPointer = null;
+  keys.a = false;
+  keys.d = false;
+  keys.s = false;
+  joystickKnob.style.transform = "";
+  joystick.classList.remove("is-pressed");
+}
+
+joystick.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  Sound.unlock();
+  if (gameState !== "playing" || transition) return;
+  joystick.setPointerCapture(event.pointerId);
+  joystickPointer = event.pointerId;
+  joystick.classList.add("is-pressed");
+  moveJoystick(event);
+});
+joystick.addEventListener("pointermove", (event) => { if (event.pointerId === joystickPointer) moveJoystick(event); });
+joystick.addEventListener("pointerup", releaseJoystick);
+joystick.addEventListener("pointercancel", releaseJoystick);
+joystick.addEventListener("lostpointercapture", releaseJoystick);
+
+const jumpButton = document.querySelector("#touchJump");
+jumpButton.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  Sound.unlock();
+  if (gameState !== "playing" || transition) return;
+  jumpButton.setPointerCapture(event.pointerId);
+  jumpButton.classList.add("is-pressed");
+  jump();
+});
+for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) {
+  jumpButton.addEventListener(type, () => jumpButton.classList.remove("is-pressed"));
+}
+
+function setTouchSprint(on) {
+  touchSprint = on;
+  document.querySelector("#touchSprint").setAttribute("aria-pressed", String(on));
+}
+
+document.querySelector("#touchSprint").addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  Sound.unlock();
+  if (gameState !== "playing") return;
+  setTouchSprint(!touchSprint);
+  Sound.play("tick");
 });
 
 const nameForm = document.querySelector("#nameForm");

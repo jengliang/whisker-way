@@ -10,18 +10,17 @@
     <main class="shell">
       <div class="stage">
         <canvas id="gameCanvas" width="960" height="540" aria-label="Whisker Way cat platformer"></canvas>
-        <svg class="touch-controls" viewBox="0 0 300 200" aria-label="Touch controls">
-          <path class="touch-zone" data-touch-key="shift" role="button" aria-label="Accelerate" d="M16 0H164.84A106 106 0 0 0 164.84 200H16Q0 200 0 184V16Q0 0 16 0Z" />
-          <path class="touch-zone" data-touch-key="w" role="button" aria-label="Jump" d="M131.44 27.2A100 100 0 0 1 268.56 27.2L226.08 69.67A40 40 0 0 0 173.92 69.67Z" />
-          <path class="touch-zone" data-touch-key="d" role="button" aria-label="Move right" d="M272.8 31.44A100 100 0 0 1 272.8 168.56L230.33 126.08A40 40 0 0 0 230.33 73.92Z" />
-          <path class="touch-zone" data-touch-key="s" role="button" aria-label="Crouch" d="M268.56 172.8A100 100 0 0 1 131.44 172.8L173.92 130.33A40 40 0 0 0 226.08 130.33Z" />
-          <path class="touch-zone" data-touch-key="a" role="button" aria-label="Move left" d="M127.2 168.56A100 100 0 0 1 127.2 31.44L169.67 73.92A40 40 0 0 0 169.67 126.08Z" />
-          <circle class="touch-zone" data-touch-action="double-jump" role="button" aria-label="Double jump" cx="200" cy="100" r="34" />
-          <g class="touch-icons">
-            <path d="M200 21L209 36H191Z M200 179L209 164H191Z M121 100L136 91V109Z M279 100L264 91V109Z" />
-            <path class="touch-chevrons" d="M189 98L200 87L211 98M189 111L200 100L211 111 M38 88L50 100L38 112M54 88L66 100L54 112" />
-          </g>
-        </svg>
+        <div class="touch-joystick" aria-label="Movement joystick">
+          <div class="touch-knob"></div>
+        </div>
+        <div class="touch-buttons">
+          <button class="touch-round" id="touchJump" type="button" aria-label="Jump">
+            <svg viewBox="0 0 100 100" aria-hidden="true"><path class="touch-fill" d="M50 24L75 51H60V76H40V51H25Z" /></svg>
+          </button>
+          <button class="touch-round" id="touchSprint" type="button" aria-label="Sprint" aria-pressed="false">
+            <svg viewBox="0 0 100 100" aria-hidden="true"><path class="touch-line" d="M31 36L19 50L31 64M43 36L31 50L43 64M57 36L69 50L57 64M69 36L81 50L69 64" /></svg>
+          </button>
+        </div>
         <form id="nameForm" class="name-entry" hidden>
           <input id="playerName" type="text" maxlength="16" placeholder="Your name" autocomplete="nickname" aria-label="Your name for the leaderboard" />
           <button type="submit">Save</button>
